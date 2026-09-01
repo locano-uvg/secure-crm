@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+**/.next
+**/out
+apps/api/data/*.db
+apps/api/data/*.db-*
+.git
+*.log
+.env

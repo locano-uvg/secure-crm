@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-09-01T18:54:06.986Z",
+        "reason": "Incumbent lab system: Inter is the documented body face across the web app and both HTML guides; this change only adds the UVG lockup and does not restyle type."
+      }
+    ]
+  }
+}

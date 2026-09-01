@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --uvg-green: #04602f;
+  --uvg-deep: #0a3d1f;
+  --uvg-hover: #0f5228;
+  --uvg-mint: #a8f0c8;
+  --uvg-graphite: #3b3a3c;
+  --paper: #f4f7f4;
+  --ink: #14261b;
+}
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-feature-settings: 'cv11', 'ss01';
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Superficies de navegador tematizadas desde la paleta (no defaults del browser). */
+::selection { background: var(--uvg-mint); color: var(--uvg-deep); }
+:focus-visible { outline: 2px solid var(--uvg-mint); outline-offset: 2px; }
+
+* { scrollbar-color: rgba(255,255,255,0.35) transparent; }
+.on-dark { scrollbar-color: var(--uvg-mint) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(10,61,31,0.25); border-radius: 999px; }
+.on-dark ::-webkit-scrollbar-thumb { background: rgba(168,240,200,0.35); }
+
+/* Números tabulares para datos y métricas. */
+.tabular { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

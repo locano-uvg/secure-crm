@@ -1,0 +1,28 @@
+# Levanta Secure CRM como si fuera un servidor real:
+#   docker compose up --build
+#   Web  -> http://localhost:3000
+#   API  -> http://localhost:4000
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      API_PORT: "4000"
+      JWT_SECRET: "secret123"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # El navegador llama a la API por el puerto publicado en el host.
+        NEXT_PUBLIC_API_URL: "http://localhost:4000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped

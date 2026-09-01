@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.next/
+out/
+build/
+*.log
+.env
+.env.local
+apps/api/data/*.db
+apps/api/data/*.db-journal
+.DS_Store
+*.tsbuildinfo
+
+# Guía del instructor (solucionario) — se mantiene fuera del repo
+docs/guia-instructor.html
+docs/INSTRUCTOR.md
