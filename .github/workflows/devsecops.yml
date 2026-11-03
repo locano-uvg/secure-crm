@@ -1,0 +1,146 @@
+# =====================================================================
+# Pipeline DevSecOps — Secure CRM (Hito 2)
+# =====================================================================
+# Controles:   SAST (Semgrep) · SCA (pnpm audit) ·
+#              SBOM (Syft, CycloneDX) · DAST (ZAP baseline)
+#
+# Monorepo pnpm. La app de este job es la de docker-compose.yml:
+#   web  http://localhost:3000
+#   API  http://localhost:4000  (health: /api/health)
+# El WAF del hito 3 (waf-siem, :8080) no entra en este pipeline.
+#
+# El baseline es el control automático del grupo. La sesión de escritorio
+# del Equipo rojo (ZAP + Burp) se entrega además en docs/hito-2.
+#
+# Security gate:
+#   SECURITY_GATE: "reporte"  -> corre los controles y publica los reportes,
+#                                pero no falla por hallazgos. La rama main es
+#                                vulnerable a propósito, así que este es el
+#                                modo con el que el pipeline puede usarse.
+#   SECURITY_GATE: "bloqueo"  -> falla si un control supera su umbral.
+#                                Documenten y justifiquen los umbrales.
+#
+# Umbrales:
+#   SAST: hallazgos de severidad ERROR · SCA: vulnerabilidades high o critical
+#   DAST: alertas de ZAP de riesgo alto
+# =====================================================================
+name: DevSecOps
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SECURITY_GATE: "reporte" # "reporte" o "bloqueo"
+
+jobs:
+  # ── SAST ───────────────────────────────────────────────────────────
+  sast:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-latest
+    container: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - name: Semgrep (reporte SARIF)
+        run: semgrep scan --config p/default --config p/owasp-top-ten --sarif --output semgrep.sarif
+      - name: Semgrep (gate)
+        continue-on-error: ${{ env.SECURITY_GATE != 'bloqueo' }}
+        run: semgrep scan --config p/default --config p/owasp-top-ten --severity ERROR --error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: semgrep
+          path: semgrep.sarif
+
+  # ── SCA ────────────────────────────────────────────────────────────
+  sca:
+    name: SCA (dependencias)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Workspace pnpm en la raíz: el lockfile cubre apps/api, apps/web y packages/shared.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Auditoría (reporte)
+        run: pnpm audit --prod --json > pnpm-audit.json || true
+      - name: Auditoría (gate)
+        continue-on-error: ${{ env.SECURITY_GATE != 'bloqueo' }}
+        run: |
+          # pnpm audit sale con código 1 ante cualquier aviso. El umbral del
+          # hito es high o critical, leído del reporte JSON.
+          altos=$(jq '.metadata.vulnerabilities.high + .metadata.vulnerabilities.critical' pnpm-audit.json)
+          echo "Vulnerabilidades high o critical: $altos"
+          test "$altos" -eq 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sca
+          path: "*-audit.json"
+
+  # ── SBOM ───────────────────────────────────────────────────────────
+  sbom:
+    name: SBOM (Syft, CycloneDX)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generar SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          artifact-name: sbom.cdx.json # queda como artefacto del pipeline
+
+  # ── DAST ───────────────────────────────────────────────────────────
+  # ZAP baseline contra la web. La API se espera en /api/health antes de escanear.
+  # La sesión de escritorio del Equipo rojo se entrega además en docs/hito-2.
+  dast:
+    name: DAST (ZAP baseline)
+    runs-on: ubuntu-latest
+    env:
+      # / es un redirect en el cliente. /login es HTML que el spider puede recorrer.
+      APP_URL: http://localhost:3000/login
+      API_URL: http://localhost:4000/api/health
+    steps:
+      - uses: actions/checkout@v4
+      # docker-compose.yml construye API y web, siembra la BD y publica :4000 y :3000.
+      - name: Levantar la aplicación
+        run: docker compose up --build -d
+      - name: Esperar a que la app responda
+        run: |
+          for i in $(seq 1 40); do
+            if curl -sf "$APP_URL" > /dev/null && curl -sf "$API_URL" > /dev/null; then
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "La app no respondió (web $APP_URL, API $API_URL)"
+          docker compose logs --no-color
+          exit 1
+      - name: ZAP baseline
+        run: |
+          mkdir -p zap && chmod 777 zap
+          docker run --rm --network host -v "$PWD/zap:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t "$APP_URL" -r reporte-zap.html -J reporte-zap.json -I \
+            || echo "ZAP terminó con hallazgos"
+      - name: ZAP (gate)
+        continue-on-error: ${{ env.SECURITY_GATE != 'bloqueo' }}
+        run: |
+          # Falla si ZAP reportó alertas de riesgo alto (riskcode 3)
+          altos=$(jq '[.site[].alerts[] | select(.riskcode == "3")] | length' zap/reporte-zap.json)
+          echo "Alertas de riesgo alto: $altos"
+          test "$altos" -eq 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap
+          path: zap/
